@@ -20,7 +20,7 @@
     "meshknecht": "meshknecht.js"
   },
   "engines": {
-    "node": ">=12.0.0"
+    "node": ">=8.0.0"
   },
   "dependencies": {
     "commander": "^4.0.0",
