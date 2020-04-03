@@ -1,0 +1,36 @@
+{
+  "name": "meshknecht",
+  "version": "0.0.1",
+  "description": "Converts GLTF, GLTF (embedded), GLB and Obj (optional with MTL) files to  Primo 3D files (.p3d).",
+  "homepage": "https://github.com/BastianZuehlke/primo-meshknecht",
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:BastianZuehlke/primo-meshknecht.git"
+  },
+  "bugs": {
+    "url": "https://github.com/BastianZuehlke/primo-meshknecht/issues"
+  },
+  "main": "meshknecht.js",
+  "keywords": [
+    "glTF",
+    "obj",
+    "primo"
+  ],
+  "bin": {
+    "meshknecht": "meshknecht.js"
+  },
+  "engines": {
+    "node": ">=12.0.0"
+  },
+  "dependencies": {
+    "commander": "^4.0.0",
+    "path": "^0.12.7",
+    "three": "0.115.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Bastian Zuehlke",
+  "license": "MIT"
+}
