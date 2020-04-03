@@ -20,7 +20,13 @@ Converts glTF, glTF (embedded), glb and obj (optional with mtl) files to Primo 3
 npm install -g https://github.com/BastianZuehlke/primo-meshknecht
 ```
 
-# Build Executable From Source
+## Test
+```
+meshknecht -V 
+```
+
+
+# Build Standalone Executable From Source
 
 Meshknecht is based on [three.js](https://threejs.org/) and implemented by using [Node.js](http://nodejs.org/). Tested with NodeJS V8.
 
