@@ -676,6 +676,19 @@ if (fileObj) {
         dataMtl = fs.readFileSync(fileMtl).toString();
 
         manager = new THREE.LoadingManager();
+        manager.onLoad = () => {
+            console.log("Manager!");
+        };
+
+        manager.onStart = (url, itemsLoaded, itemsTotal) => {
+            console.log('Started loading file: ' + url + '.\nLoaded ' + itemsLoaded + ' of ' + itemsTotal + ' files.');
+        };
+
+        manager.onProgress = function (url, itemsLoaded, itemsTotal) {
+            console.log('Loading file: ' + url + '.\nLoaded ' + itemsLoaded + ' of ' + itemsTotal + ' files.');
+        };
+
+
         mtls = new THREE.MTLLoader(manager)
             .setMaterialOptions({
                 side: THREE.FrontSide,
@@ -688,18 +701,24 @@ if (fileObj) {
     }
 
     let loader = new THREE.OBJLoader();
-    let scene = loader
-        .setMaterials(mtls)
-        .parse(dataObj);
+    let scene;
 
-    if (manager) {
-        manager.onLoad = () => {
+    try {
+        if (mtls) {
+            loader.setMaterials(mtls);
+        }
+        scene = loader.parse(dataObj);
+
+        if (mtls && mtls.materialsArray.length > 0 && manager) {
+            manager.onLoad = () => {
+                execute(scene);
+            };
+        } else {
             execute(scene);
-        };
-    } else {
-        execute(scene);
+        }
+    } catch (error) {
+        console.error(error);
     }
-
 } else if (fileGLTF) {
     dataObj = fs.readFileSync(fileGLTF).toString();
     let assetPath = path.dirname(fileGLTF) + "/";
