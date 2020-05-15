@@ -25,6 +25,9 @@ npm install -g https://github.com/BastianZuehlke/primo-meshknecht
 meshknecht -V 
 ```
 
+# Build Standalone Executable
+
+For Windows and Mac are in the bin directory.
 
 # Build Standalone Executable From Source
 
