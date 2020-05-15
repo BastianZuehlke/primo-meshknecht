@@ -12,7 +12,7 @@ require('three/examples/js/loaders/GLTFLoader');
 require('three/examples/js/utils/BufferGeometryUtils.js');
 
 program
-    .version('0.0.1')
+    .version('0.0.3')
     .option('-i, --input <file>', 'obj, gltf or glb path')
     .option('-m, --mtl <file>', 'Mtl file (optional)')
     .option('-o, --output <path>', 'Output Path')
@@ -140,15 +140,10 @@ Blob = function (buffer, mime) {
     return blob;
 }
 
+URL = function () {};
+URL.createObjectURL = function (blob) { return blob.id; };
+URL.revokeObjectURL = function () {};
 
-URL = {
-    createObjectURL: function (blob) {
-        return blob.id;
-    },
-    revokeObjectURL: function () {
-
-    }
-};
 
 self = { URL: URL };
 
@@ -307,6 +302,7 @@ var _convertObject = (scene, obj) => {
         v.vu = (z << 16) | y;
 
         if (ns) {
+            ns[iv + 2] = -ns[iv + 2];
             var nx = ((ns[iv + 0] + 1) * 511.999) | 0;
             var ny = ((ns[iv + 1] + 1) * 511.999) | 0;
             var nz = ((ns[iv + 2] + 1) * 511.999) | 0;
@@ -333,9 +329,17 @@ var _convertObject = (scene, obj) => {
 
     if (fs) {
         for (j = 0; j < fc; j += 3) {
-            indices.push(indicesMap[fs[j + 0]]);
-            indices.push(indicesMap[fs[j + 1]]);
             indices.push(indicesMap[fs[j + 2]]);
+            indices.push(indicesMap[fs[j + 1]]);
+            indices.push(indicesMap[fs[j + 0]]);
+            //debugIndices =  debugIndices + "" + fs[j+0] + "," + fs[j+1] + "," + fs[j+2] + "|";
+        }
+    } else {
+        fc = indices.length / 3;
+        for (j = 0; j < fc; j += 3) {            
+            var tmp = indices[j + 0];
+            indices[j + 0] = indices[j + 2];            
+            indices[j + 2] = tmp;
             //debugIndices =  debugIndices + "" + fs[j+0] + "," + fs[j+1] + "," + fs[j+2] + "|";
         }
     }
@@ -624,6 +628,8 @@ function inspectScene(scene) {
 
             for (let j = 0; j < vc; j++) {
                 let i = j * 3;
+
+                vs[i + 2] = -vs[i + 2];
 
                 minposx = Math.min(vs[i + 0], minposx);
                 minposy = Math.min(vs[i + 1], minposy);
