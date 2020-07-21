@@ -12,7 +12,7 @@ require('three/examples/js/loaders/GLTFLoader');
 require('three/examples/js/utils/BufferGeometryUtils.js');
 
 program
-    .version('0.0.3')
+    .version('0.0.4')
     .option('-i, --input <file>', 'obj, gltf or glb path')
     .option('-m, --mtl <file>', 'Mtl file (optional)')
     .option('-o, --output <path>', 'Output Path')
@@ -117,7 +117,7 @@ function newFileLoader() {
     self.setWithCredentials = function () { };
 
     self.setPath = function (path) {
-        console.log("Path:" + path);
+        //console.log("Path:" + path);
     };
 
     return self;
@@ -140,9 +140,9 @@ Blob = function (buffer, mime) {
     return blob;
 }
 
-URL = function () {};
+URL = function () { };
 URL.createObjectURL = function (blob) { return blob.id; };
-URL.revokeObjectURL = function () {};
+URL.revokeObjectURL = function () { };
 
 
 self = { URL: URL };
@@ -336,9 +336,9 @@ var _convertObject = (scene, obj) => {
         }
     } else {
         fc = indices.length / 3;
-        for (j = 0; j < fc; j += 3) {            
+        for (j = 0; j < fc; j += 3) {
             var tmp = indices[j + 0];
-            indices[j + 0] = indices[j + 2];            
+            indices[j + 0] = indices[j + 2];
             indices[j + 2] = tmp;
             //debugIndices =  debugIndices + "" + fs[j+0] + "," + fs[j+1] + "," + fs[j+2] + "|";
         }
@@ -570,7 +570,7 @@ function convertAll(scene) {
 
 
         var p3d = _convertObject(scene, c);
-        var fn = outpath + "/" + pad + "_" + c.name + ".p3d";
+        var fn = path.resolve(outpath, pad + "_" + c.name.replace(/\W/g, '_') + ".p3d");
         var fnInfo = fn.replace('.p3d', '.txt');
 
         var msg = "done: " + c.name;
@@ -589,7 +589,6 @@ function convertAll(scene) {
     blobs.forEach(b => {
         if (b.name) {
             fs.writeFileSync(outpath + "/" + b.name, b.buffer);
-
         }
     });
 }
@@ -609,14 +608,17 @@ function inspectScene(scene) {
     function inspect(obj) {
         if (obj && obj.geometry) {
             if (merge) {
-                if (materials[obj.material.uuid]) {
+                let uuid = obj.material.uuid;
+                if (materials[uuid] !== undefined) {
+                    materials[uuid].push(obj);
+                    /*
                     materials[obj.material.uuid].geometry = THREE.BufferGeometryUtils.mergeBufferGeometries([materials[obj.material.uuid].geometry, obj.geometry], false);
                     materials[obj.material.uuid].name += obj.name;
                     materials[obj.material.uuid].name = materials[obj.material.uuid].name.substring(0, 32);
-
+                    */
                 } else {
-                    scene._meshList.push(obj);
-                    materials[obj.material.uuid] = obj;
+                    //scene._meshList.push(obj);
+                    materials[obj.material.uuid] = [obj];
                 }
             } else {
                 scene._meshList.push(obj);
@@ -647,6 +649,29 @@ function inspectScene(scene) {
 
 
     inspect(scene);
+
+    if (merge) {
+        for (let a in materials) {
+            let os = materials[a];
+            if (os) {
+                if (os.length > 1) {
+                    let gs = [];
+                    let name = "";
+                    os.forEach(geo => {
+                        gs.push(geo.geometry);
+                        name = name + geo.name;
+                        name = name.substring(0, 32);
+                    });
+                    const mergedGeometry = THREE.BufferGeometryUtils.mergeBufferGeometries(gs, false);
+                    const mesh = new THREE.Mesh(mergedGeometry, os[0].material);
+                    mesh.name = name;
+                    scene._meshList.push(mesh);
+                } else {
+                    scene._meshList.push(os[0]);
+                }
+            }
+        }
+    }
 
     scene._minposx = minposx;
     scene._minposy = minposy;
@@ -682,16 +707,14 @@ if (fileObj) {
         dataMtl = fs.readFileSync(fileMtl).toString();
 
         manager = new THREE.LoadingManager();
-        manager.onLoad = () => {
-            console.log("Manager!");
-        };
+        manager.onLoad = () => { };
 
         manager.onStart = (url, itemsLoaded, itemsTotal) => {
-            console.log('Started loading file: ' + url + '.\nLoaded ' + itemsLoaded + ' of ' + itemsTotal + ' files.');
+         //   console.log('Started loading file: ' + url + '.\nLoaded ' + itemsLoaded + ' of ' + itemsTotal + ' files.');
         };
 
         manager.onProgress = function (url, itemsLoaded, itemsTotal) {
-            console.log('Loading file: ' + url + '.\nLoaded ' + itemsLoaded + ' of ' + itemsTotal + ' files.');
+          //  console.log('Loading file: ' + url + '.\nLoaded ' + itemsLoaded + ' of ' + itemsTotal + ' files.');
         };
 
 
