@@ -1,6 +1,6 @@
 {
   "name": "meshknecht",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Converts GLTF, GLTF (embedded), GLB and Obj (optional with MTL) files to  Primo 3D files (.p3d).",
   "homepage": "https://github.com/BastianZuehlke/primo-meshknecht",
   "repository": {
@@ -25,7 +25,8 @@
   "dependencies": {
     "commander": "^4.0.0",
     "path": "^0.12.7",
-    "three": "0.115.0"
+    "three": "0.115.0",
+    "draco3dgltf": "*"
   },
   "devDependencies": {},
   "scripts": {

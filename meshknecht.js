@@ -4,22 +4,25 @@
 const fs = require('fs');
 const program = require('commander');
 const path = require('path');
+const worker = require('worker_threads');
+Worker = worker.Worker;
 
 THREE = require('three');
 require('three/examples/js/loaders/OBJLoader');
 require('three/examples/js/loaders/MTLLoader');
 require('three/examples/js/loaders/GLTFLoader');
 require('three/examples/js/utils/BufferGeometryUtils.js');
+require('three/examples/js/loaders/DRACOLoader');
 
 program
-    .version('0.0.4')
-    .option('-i, --input <file>', 'obj, gltf or glb path')
-    .option('-m, --mtl <file>', 'Mtl file (optional)')
-    .option('-o, --output <path>', 'Output Path')
-    .option('-z, --zoom <number>', 'Zoom factor for vertices')
-    .option('-n, --norm', 'Normalize vertices [-1,1]')
-    .option('-m, --merge', 'Merge meshes with same material')
-    .description('https://github.com/BastianZuehlke/primo-meshknecht');
+  .version('0.0.5')
+  .option('-i, --input <file>', 'obj, gltf or glb path')
+  .option('-m, --mtl <file>', 'Mtl file (optional)')
+  .option('-o, --output <path>', 'Output Path')
+  .option('-z, --zoom <number>', 'Zoom factor for vertices')
+  .option('-n, --norm', 'Normalize vertices [-1,1]')
+  .option('-m, --merge', 'Merge meshes with same material')
+  .description('https://github.com/BastianZuehlke/primo-meshknecht');
 
 program.parse(process.argv);
 
@@ -38,89 +41,104 @@ var dataMtl;
 var mtls;
 
 if (!program.input) {
-    console.error("Error: --input mandatory.");
-    return;
+  console.error("Error: --input mandatory.");
+  return;
 }
 
 let ext = path.extname(program.input).toLowerCase();
 
 switch (ext) {
-    case ".gltf":
-        fileGLTF = program.input;
-        break;
-    case ".glb":
-        fileGLB = program.input;
-        break;
-    case ".obj":
-        fileObj = program.input;
-        break;
-    default:
-        console.error("Error: --input format " + ext + " unknown.");
-        return;
+  case ".gltf":
+    fileGLTF = program.input;
+    break;
+  case ".glb":
+    fileGLB = program.input;
+    break;
+  case ".obj":
+    fileObj = program.input;
+    break;
+  default:
+    console.error("Error: --input format " + ext + " unknown.");
+    return;
 }
 
 function TextureLoader2(manager) {
-    THREE.Loader.call(this, manager);
+  THREE.Loader.call(this, manager);
 }
 
 TextureLoader2.prototype = Object.assign(Object.create(THREE.Loader.prototype), {
 
-    constructor: TextureLoader2,
+  constructor: TextureLoader2,
 
-    load: function (url, onLoad, onProgress, onError) {
-        var scope = this;
-        var texture = new THREE.Texture();
-        scope.manager.itemStart(url);
+  load: function (url, onLoad, onProgress, onError) {
+    var scope = this;
+    var texture = new THREE.Texture();
+    scope.manager.itemStart(url);
 
-        setTimeout(function () {
-            if (onLoad) {
-                onLoad(texture);
-            }
-            //console.log("loaded: " + url);
-            scope.manager.itemEnd(url);
-        }, 0);
+    setTimeout(function () {
+      if (onLoad) {
+        onLoad(texture);
+      }
+      //console.log("loaded: " + url);
+      scope.manager.itemEnd(url);
+    }, 0);
 
-        texture.url = url;
-        texture.format = THREE.RGBAFormat;
-        texture.needsUpdate = true;
+    texture.url = url;
+    texture.format = THREE.RGBAFormat;
+    texture.needsUpdate = true;
 
-        return texture;
-    }
+    return texture;
+  }
 });
 
 function bufferToArrayBufferCycle(buffer) {
-    var ab = new ArrayBuffer(buffer.length);
-    var view = new Uint8Array(ab);
-    for (var i = 0; i < buffer.length; ++i) {
-        view[i] = buffer[i];
-    }
-    return ab;
+  var ab = new ArrayBuffer(buffer.length);
+  var view = new Uint8Array(ab);
+  for (var i = 0; i < buffer.length; ++i) {
+    view[i] = buffer[i];
+  }
+  return ab;
 }
 
 function newFileLoader() {
-    var self = {};
-    self.load = function (url, onLoad, onProgress, onError) {
-        setTimeout(() => {
-            let data;
-            if (url.indexOf('data:application/octet-stream;base64,') === 0) {
-                data = new Buffer(url.replace('data:application/octet-stream;base64,', ''), 'base64');
-            } else {
-                data = fs.readFileSync(url);
-            }
-            let buffer = bufferToArrayBufferCycle(data);
-            onLoad(buffer);
-        }, 10);
-    };
+  var self = {};
+  self.path = "";
+  self.responseType = "arraybuffer";
+  self.load = function (url, onLoad, onProgress, onError) {
+    url = __dirname + "/" + self.path + url;
+    setTimeout(() => {
+      let data;
+      if (url.indexOf('data:application/octet-stream;base64,') === 0) {
+        data = new Buffer(url.replace('data:application/octet-stream;base64,', ''), 'base64');
+      } else {
+        if (self.responseType !== "text") {
+          data = fs.readFileSync(url);
+        } else {
+          data = fs.readFileSync(url, "utf-8");
+        }
+      }
+      if (self.responseType === "arraybuffer") {
+        let buffer = bufferToArrayBufferCycle(data);
+        onLoad(buffer);
+      } else {
+        onLoad(data);
+      }
+    }, 10);
+  };
 
-    self.setResponseType = function () { };
+  self.setResponseType = function (rt) {
+    self.responseType = rt;
+    console.log("setResponseType:" + rt);
+  };
 
-    self.setWithCredentials = function () { };
+  self.setWithCredentials = function () { };
 
-    self.setPath = function (path) {
-        //console.log("Path:" + path);
-    };
+  self.setPath = function (path) {
+    self.path = path;
+    //console.log("Path:" + path);
+  };
 
-    return self;
+  return self;
 }
 
 THREE.FileLoader = newFileLoader;
@@ -130,302 +148,314 @@ let blobs = [];
 
 
 Blob = function (buffer, mime) {
+  let type = "";
+  let id = "blob:" + blobs.length;
+  let blob;
+  if (mime) {
     mime = mime.type.toLowerCase();
     let png = mime.indexOf("png") !== -1;
     let jpg = (mime.indexOf("jpg") !== -1) || (mime.indexOf("jepg") !== -1);
-    let type = png ? "png" : jpg ? "jpg" : mime.split('/')[1];
-    let id = "blob:" + blobs.length;
-    let blob = { buffer: new Uint8Array(buffer[0]), type: type, id: id };
-    blobs.push(blob);
-    return blob;
+    type = png ? "png" : jpg ? "jpg" : mime.split('/')[1];
+  } else {
+    type = "text";
+    console.log("no mime");
+  }
+  blob = { buffer: new Uint8Array(buffer[0]), type: type, id: id };
+  blobs.push(blob);
+  return blob;
 }
 
 URL = function () { };
 URL.createObjectURL = function (blob) { return blob.id; };
 URL.revokeObjectURL = function () { };
-
+URL.toString = function () { console.log("URL toString"); };
+URL.toJSON = function () { console.log("URL toJSON"); };
 
 self = { URL: URL };
 
 var _convertObject = (scene, obj) => {
-    var i, j;
+  var i, j;
 
-    //let debugVertices = "";
-    //let debugIndices = "";
+  //let debugVertices = "";
+  //let debugIndices = "";
 
-    var flagEnums = {
-        normals: 1 << 8,
-        uvs: 2 << 8
-    };
+  if (!obj._vertices) { 
+    return; 
+  }
 
-    var flags = 0;
+  var flagEnums = {
+    normals: 1 << 8,
+    uvs: 2 << 8
+  };
 
-    var pos = obj.geometry.getAttribute('position');
-    var vs = pos.array;
-    var vc = pos.count;
+  var flags = 0;
 
-    let fs = obj.geometry.getIndex !== undefined ? obj.geometry.getIndex() : null;
-    let fc = 0;
+  var pos = obj.geometry.getAttribute('position');
+  var vs = obj._vertices;//pos.array;
+  var vc = pos.count;
 
-    if (fs) {
-        fc = fs.count;
-        fs = fs.array;
+  let fs = obj.geometry.getIndex !== undefined ? obj.geometry.getIndex() : null;
+  let fc = 0;
+
+  if (fs) {
+    fc = fs.count;
+    fs = fs.array;
+  }
+
+  var uvs = null;
+  var ns = null;
+
+  if (obj.geometry.attributes.uv) {
+    uvs = obj.geometry.getAttribute('uv').array;
+    flags = flags | flagEnums.uvs;
+  }
+  if (obj.geometry.attributes.normal) {
+    ns = obj.geometry.getAttribute('normal').array;
+    flags = flags | flagEnums.normals;
+  }
+
+  var minposx = scene._minposx;
+  var minposy = scene._minposy;
+  var minposz = scene._minposz;
+
+  var maxposx = scene._maxposx;
+  var maxposy = scene._maxposy;
+  var maxposz = scene._maxposz;
+
+  var deltax = maxposx - minposx;
+  var deltay = maxposy - minposy;
+  var deltaz = maxposz - minposz;
+
+  var minu0 = Number.MAX_VALUE;
+  var maxu0 = -Number.MAX_VALUE;
+  var minv0 = Number.MAX_VALUE;
+  var maxv0 = -Number.MAX_VALUE;
+
+  var delta = (Math.max(Math.max(deltax, deltay), deltaz)) / zoom * 0.5;
+
+  let offsetX = (maxposx + minposx) * 0.5;
+  let offsetY = (maxposy + minposy) * 0.5;
+  let offsetZ = (maxposz + minposz) * 0.5;
+
+  minposx = Number.MAX_VALUE;
+  minposy = Number.MAX_VALUE;
+  minposz = Number.MAX_VALUE;
+
+  maxposx = -Number.MAX_VALUE;
+  maxposy = -Number.MAX_VALUE;
+  maxposz = -Number.MAX_VALUE;
+
+  for (j = 0; j < vc; j++) {
+
+    if (uvs) {
+      i = j * 2;
+      uvs[i + 1] = - uvs[i + 1] + 1;
+      minu0 = Math.min(uvs[i + 0], minu0);
+      minv0 = Math.min(uvs[i + 1], minv0);
+      maxu0 = Math.max(uvs[i + 0], maxu0);
+      maxv0 = Math.max(uvs[i + 1], maxv0);
     }
 
-    var uvs = null;
-    var ns = null;
+    i = j * 3;
 
-    if (obj.geometry.attributes.uv) {
-        uvs = obj.geometry.getAttribute('uv').array;
-        flags = flags | flagEnums.uvs;
-    }
-    if (obj.geometry.attributes.normal) {
-        ns = obj.geometry.getAttribute('normal').array;
-        flags = flags | flagEnums.normals;
-    }
+    //debugVertices = debugVertices + "x:" + vs[i + 0] + " y:" + vs[i + 1] + " z:" + vs[i + 2] + "|";
 
-    var minposx = scene._minposx;
-    var minposy = scene._minposy;
-    var minposz = scene._minposz;
-
-    var maxposx = scene._maxposx;
-    var maxposy = scene._maxposy;
-    var maxposz = scene._maxposz;
-
-    var deltax = maxposx - minposx;
-    var deltay = maxposy - minposy;
-    var deltaz = maxposz - minposz;
-
-    var minu0 = Number.MAX_VALUE;
-    var maxu0 = -Number.MAX_VALUE;
-    var minv0 = Number.MAX_VALUE;
-    var maxv0 = -Number.MAX_VALUE;
-
-    var delta = (Math.max(Math.max(deltax, deltay), deltaz)) / zoom * 0.5;
-
-    let offsetX = (maxposx + minposx) * 0.5;
-    let offsetY = (maxposy + minposy) * 0.5;
-    let offsetZ = (maxposz + minposz) * 0.5;
-
-    minposx = Number.MAX_VALUE;
-    minposy = Number.MAX_VALUE;
-    minposz = Number.MAX_VALUE;
-
-    maxposx = -Number.MAX_VALUE;
-    maxposy = -Number.MAX_VALUE;
-    maxposz = -Number.MAX_VALUE;
-
-    for (j = 0; j < vc; j++) {
-
-        if (uvs) {
-            i = j * 2;
-            uvs[i + 1] = - uvs[i + 1] + 1;
-            minu0 = Math.min(uvs[i + 0], minu0);
-            minv0 = Math.min(uvs[i + 1], minv0);
-            maxu0 = Math.max(uvs[i + 0], maxu0);
-            maxv0 = Math.max(uvs[i + 1], maxv0);
-        }
-
-        i = j * 3;
-
-        //debugVertices = debugVertices + "x:" + vs[i + 0] + " y:" + vs[i + 1] + " z:" + vs[i + 2] + "|";
-
-        if (norm) {
-            vs[i + 0] = (vs[i + 0] - offsetX) / delta;
-            vs[i + 1] = (vs[i + 1] - offsetY) / delta;
-            vs[i + 2] = (vs[i + 2] - offsetZ) / delta;
-        } else {
-            vs[i + 0] *= zoom;
-            vs[i + 1] *= zoom;
-            vs[i + 2] *= zoom;
-        }
-
-        minposx = Math.min(vs[i + 0], minposx);
-        minposy = Math.min(vs[i + 1], minposy);
-        minposz = Math.min(vs[i + 2], minposz);
-
-        maxposx = Math.max(vs[i + 0], maxposx);
-        maxposy = Math.max(vs[i + 1], maxposy);
-        maxposz = Math.max(vs[i + 2], maxposz);
-
-        //debugVertices = debugVertices + "x:" + vs[i + 0] + " y:" + vs[i + 1] + " z:" + vs[i + 2] + "|";
-
-        //console.log("x:" + vs[i + 0] + " y:" + vs[i + 1] + " z:" + vs[i + 2] );
-    }
-
-    deltax = maxposx - minposx;
-    deltay = maxposy - minposy;
-    deltaz = maxposz - minposz;
-
-    var deltau = maxu0 - minu0;
-    var deltav = maxv0 - minv0;
-
-    var vertices = [];
-    var indices = [];
-    var verticesMap = new Map();
-    var indicesMap = [];
-
-    function addVertex(v) {
-        let hash = "" + v.vl + v.vu + (v.n !== undefined ? v.n : "") + (v.uv0 !== undefined ? v.uv0 : "");
-        let d = verticesMap.get(hash);
-
-        if (d !== undefined) {
-            return d;
-        }
-        v.nb = vertices.length;
-        vertices.push(v);
-        verticesMap.set(hash, v.nb);
-        return v.nb;
-    }
-
-
-
-    for (j = 0; j < vc; j++) {
-        var v = {};
-
-        var iv = j * 3;
-        var it = j * 2;
-
-        var x = (vs[iv + 0] - minposx) / deltax;
-        var y = (vs[iv + 1] - minposy) / deltay;
-        var z = (vs[iv + 2] - minposz) / deltaz;
-
-        x = (x * 262143.0) | 0;
-        y = (y * 262143.0) | 0;
-        z = (z * 262143.0) | 0;
-
-        var t = (x & 3) | ((y & 3) << 2) | (z & 3 << 4); //6Bit
-        x = (x >> 2) & 0xffff;
-        y = (y >> 2) & 0xffff;
-        z = (z >> 2) & 0xffff;
-        v.vl = (t << 16) | x;
-        v.vu = (z << 16) | y;
-
-        if (ns) {
-            ns[iv + 2] = -ns[iv + 2];
-            var nx = ((ns[iv + 0] + 1) * 511.999) | 0;
-            var ny = ((ns[iv + 1] + 1) * 511.999) | 0;
-            var nz = ((ns[iv + 2] + 1) * 511.999) | 0;
-            v.n = nx | (ny << 10) | (nz << 20);
-        }
-
-        if (uvs) {
-            var tu = (uvs[it + 0] - minu0) / deltau;
-            var tv = (uvs[it + 1] - minv0) / deltav;
-
-            tu = (tu * 4095) | 0;
-            tv = (tv * 4095) | 0;
-            v.uv0 = ((tv & 4095) << 12) | (tu & 4095);
-        }
-
-
-        let nb = addVertex(v);
-        if (fs) {
-            indicesMap[j] = nb;
-        } else {
-            indices.push(nb);
-        }
-    }
-
-    if (fs) {
-        for (j = 0; j < fc; j += 3) {
-            indices.push(indicesMap[fs[j + 2]]);
-            indices.push(indicesMap[fs[j + 1]]);
-            indices.push(indicesMap[fs[j + 0]]);
-            //debugIndices =  debugIndices + "" + fs[j+0] + "," + fs[j+1] + "," + fs[j+2] + "|";
-        }
+    if (norm) {
+      vs[i + 0] = (vs[i + 0] - offsetX) / delta;
+      vs[i + 1] = (vs[i + 1] - offsetY) / delta;
+      vs[i + 2] = (vs[i + 2] - offsetZ) / delta;
     } else {
-        fc = indices.length / 3;
-        for (j = 0; j < fc; j += 3) {
-            var tmp = indices[j + 0];
-            indices[j + 0] = indices[j + 2];
-            indices[j + 2] = tmp;
-            //debugIndices =  debugIndices + "" + fs[j+0] + "," + fs[j+1] + "," + fs[j+2] + "|";
-        }
+      vs[i + 0] *= zoom;
+      vs[i + 1] *= zoom;
+      vs[i + 2] *= zoom;
     }
 
-    var buf = new ArrayBuffer(indices.length * 12 + vertices.length * 32 + 1024);
+    minposx = Math.min(vs[i + 0], minposx);
+    minposy = Math.min(vs[i + 1], minposy);
+    minposz = Math.min(vs[i + 2], minposz);
 
-    var ui32 = new Int32Array(buf);
-    var ui16 = new Uint16Array(buf);
-    var f32 = new Float32Array(buf);
-    var mp = 0;
+    maxposx = Math.max(vs[i + 0], maxposx);
+    maxposy = Math.max(vs[i + 1], maxposy);
+    maxposz = Math.max(vs[i + 2], maxposz);
 
-    function wi(v) {
-        ui32[mp >> 2] = v | 0;
-        mp += 4;
+    //debugVertices = debugVertices + "x:" + vs[i + 0] + " y:" + vs[i + 1] + " z:" + vs[i + 2] + "|";
+
+    //console.log("x:" + vs[i + 0] + " y:" + vs[i + 1] + " z:" + vs[i + 2] );
+  }
+
+  deltax = maxposx - minposx;
+  deltay = maxposy - minposy;
+  deltaz = maxposz - minposz;
+
+  var deltau = maxu0 - minu0;
+  var deltav = maxv0 - minv0;
+
+  var vertices = [];
+  var indices = [];
+  var verticesMap = new Map();
+  var indicesMap = [];
+
+  function addVertex(v) {
+    let hash = "" + v.vl + v.vu + (v.n !== undefined ? v.n : "") + (v.uv0 !== undefined ? v.uv0 : "");
+    let d = verticesMap.get(hash);
+
+    if (d !== undefined) {
+      return d;
     }
-    function ws(v) {
-        ui16[mp >> 1] = v | 0;
-        mp += 2;
-    }
-    function wf(v) {
-        f32[mp >> 2] = v;
-        mp += 4;
-    }
+    v.nb = vertices.length;
+    vertices.push(v);
+    verticesMap.set(hash, v.nb);
+    return v.nb;
+  }
 
 
-    wi(0);                          //Id
-    wi(flags);                      //Flags;
-    wi(1);                          //NbClusters;
-    wi(vertices.length | (7 >> 24));  //0-23 Bits Nb 24-31 Bits Flags  (1 uv0, 2 uv1, 4 norm, 8 tan + binorm)
-    wi(1 | (1 << 4) | (1 << 8));     //CompressionTypes;  //4 Bits 
-    wi(0);                          //Version;
-    wi(0); wi(0); wi(0);              //Unused[3];      //for futures extensions
-    wi(0);                          //MetaDataSize;   //Number of uint    
 
-    wf(minposx);
-    wf(minposy);
-    wf(minposz);
-    wf(deltax);
-    wf(deltay);
-    wf(deltaz);
-    wi(vertices.length);
+  for (j = 0; j < vc; j++) {
+    var v = {};
 
-    for (i = 0; i < vertices.length; i++) {
-        wi(vertices[i].vl);
-        wi(vertices[i].vu);
-    }
+    var iv = j * 3;
+    var it = j * 2;
+
+    var x = (vs[iv + 0] - minposx) / deltax;
+    var y = (vs[iv + 1] - minposy) / deltay;
+    var z = (vs[iv + 2] - minposz) / deltaz;
+
+    x = (x * 262143.0) | 0;
+    y = (y * 262143.0) | 0;
+    z = (z * 262143.0) | 0;
+
+    var t = (x & 3) | ((y & 3) << 2) | (z & 3 << 4); //6Bit
+    x = (x >> 2) & 0xffff;
+    y = (y >> 2) & 0xffff;
+    z = (z >> 2) & 0xffff;
+    v.vl = (t << 16) | x;
+    v.vu = (z << 16) | y;
 
     if (ns) {
-        wi(vertices.length);
-        for (i = 0; i < vertices.length; i++) {
-            wi(vertices[i].n);
-        }
+      ns[iv + 2] = -ns[iv + 2];
+      var nx = ((ns[iv + 0] + 1) * 511.999) | 0;
+      var ny = ((ns[iv + 1] + 1) * 511.999) | 0;
+      var nz = ((ns[iv + 2] + 1) * 511.999) | 0;
+      v.n = nx | (ny << 10) | (nz << 20);
     }
 
     if (uvs) {
-        wf(minu0);
-        wf(minv0);
-        wf(deltau);
-        wf(deltav);
-        wi(vertices.length);
-        for (i = 0; i < vertices.length; i++) {
-            wi(vertices[i].uv0);
-        }
+      var tu = (uvs[it + 0] - minu0) / deltau;
+      var tv = (uvs[it + 1] - minv0) / deltav;
+
+      tu = (tu * 4095) | 0;
+      tv = (tv * 4095) | 0;
+      v.uv0 = ((tv & 4095) << 12) | (tu & 4095);
     }
 
-    wi(indices.length);
-    for (i = 0; i < indices.length; i++) {
-        if (vertices.length < 65535) {
-            ws(indices[i]);
-        } else {
-            wi(indices[i]);
-        }
+
+    let nb = addVertex(v);
+    if (fs) {
+      indicesMap[j] = nb;
+    } else {
+      indices.push(nb);
     }
+  }
 
-    if (vertices.length < 65535 && indices.length & 1) {
-        ws(0x77aa); //Pad
+  if (fs) {
+    for (j = 0; j < fc; j += 3) {
+      indices.push(indicesMap[fs[j + 2]]);
+      indices.push(indicesMap[fs[j + 1]]);
+      indices.push(indicesMap[fs[j + 0]]);
+      //debugIndices =  debugIndices + "" + fs[j+0] + "," + fs[j+1] + "," + fs[j+2] + "|";
     }
+  } else {
+    fc = indices.length / 3;
+    for (j = 0; j < fc; j += 3) {
+      var tmp = indices[j + 0];
+      indices[j + 0] = indices[j + 2];
+      indices[j + 2] = tmp;
+      //debugIndices =  debugIndices + "" + fs[j+0] + "," + fs[j+1] + "," + fs[j+2] + "|";
+    }
+  }
 
-    let info = {
-        uv0: !!uvs,
-        normals: !!ns,
-        triangles: indices.length / 3,
-        vertices: vertices.length,
-        material: {
+  var buf = new ArrayBuffer(indices.length * 12 + vertices.length * 32 + 1024);
 
-        }/*,
+  var ui32 = new Int32Array(buf);
+  var ui16 = new Uint16Array(buf);
+  var f32 = new Float32Array(buf);
+  var mp = 0;
+
+  function wi(v) {
+    ui32[mp >> 2] = v | 0;
+    mp += 4;
+  }
+  function ws(v) {
+    ui16[mp >> 1] = v | 0;
+    mp += 2;
+  }
+  function wf(v) {
+    f32[mp >> 2] = v;
+    mp += 4;
+  }
+
+
+  wi(0);                          //Id
+  wi(flags);                      //Flags;
+  wi(1);                          //NbClusters;
+  wi(vertices.length | (7 >> 24));  //0-23 Bits Nb 24-31 Bits Flags  (1 uv0, 2 uv1, 4 norm, 8 tan + binorm)
+  wi(1 | (1 << 4) | (1 << 8));     //CompressionTypes;  //4 Bits 
+  wi(0);                          //Version;
+  wi(0); wi(0); wi(0);              //Unused[3];      //for futures extensions
+  wi(0);                          //MetaDataSize;   //Number of uint    
+
+  wf(minposx);
+  wf(minposy);
+  wf(minposz);
+  wf(deltax);
+  wf(deltay);
+  wf(deltaz);
+  wi(vertices.length);
+
+  for (i = 0; i < vertices.length; i++) {
+    wi(vertices[i].vl);
+    wi(vertices[i].vu);
+  }
+
+  if (ns) {
+    wi(vertices.length);
+    for (i = 0; i < vertices.length; i++) {
+      wi(vertices[i].n);
+    }
+  }
+
+  if (uvs) {
+    wf(minu0);
+    wf(minv0);
+    wf(deltau);
+    wf(deltav);
+    wi(vertices.length);
+    for (i = 0; i < vertices.length; i++) {
+      wi(vertices[i].uv0);
+    }
+  }
+
+  wi(indices.length);
+  for (i = 0; i < indices.length; i++) {
+    if (vertices.length < 65535) {
+      ws(indices[i]);
+    } else {
+      wi(indices[i]);
+    }
+  }
+
+  if (vertices.length < 65535 && indices.length & 1) {
+    ws(0x77aa); //Pad
+  }
+
+  let info = {
+    uv0: !!uvs,
+    normals: !!ns,
+    triangles: indices.length / 3,
+    vertices: vertices.length,
+    material: {
+
+    }/*,
         
         debug: {
             debugVertices: debugVertices,
@@ -433,337 +463,364 @@ var _convertObject = (scene, obj) => {
         }
         */
 
-    };
+  };
 
-    function getColor(color) {
-        function _g(value) {
-            return "" + (value * 255) | 0;
-        }
-        return _g(color.r) + "," + _g(color.g) + "," + _g(color.b);
+  function getColor(color) {
+    function _g(value) {
+      return "" + (value * 255) | 0;
+    }
+    return _g(color.r) + "," + _g(color.g) + "," + _g(color.b);
+  }
+
+  let material = obj.material;
+  if (material) {
+    let m = info.material;
+    if (material.type === "MeshStandardMaterial") {
+      m.physicallyBasedMaterial = true;
+    }
+    if (material.type === "MeshPhongMaterial") {
+      m.physicallyBasedMaterial = false;
+      m.opacity = material.opacity;
     }
 
-    let material = obj.material;
-    if (material) {
-        let m = info.material;
-        if (material.type === "MeshStandardMaterial") {
-            m.physicallyBasedMaterial = true;
-        }
-        if (material.type === "MeshPhongMaterial") {
-            m.physicallyBasedMaterial = false;
-            m.opacity = material.opacity;
-        }
-
-        if (material.emissive !== undefined && material.emissive !== null) {
-            m.emissiveColor = getColor(material.emissive);
-            m.emissiveIntensity = material.emissiveIntensity;
-        }
-
-        if (material.emissiveMap) {
-            m.emissiveMap = material.emissiveMap.url;
-        }
-
-        if (material.color !== undefined && material.color !== null) {
-            m.diffuseColor = getColor(material.color);
-        }
-
-        if (material.map) {
-            m.diffuseColorMap = material.map.url;
-        }
-
-        if (material.aoMap) {
-            m.diffuseAOMap = material.aoMap.url;
-            m.diffuseAOMapIntensity = material.aoMapIntensity;
-        }
-
-        if (material.bumpMap) {
-            m.bumpMap = material.bumpMap.url;
-            m.bumpMapScale = material.bumpScale;
-        }
-
-        if (material.normalMap) {
-            m.normalMap = material.normalMap.url;
-            m.normalMapScale = "" + material.normalScale.x + "," + material.normalScale.y;
-            m.normalMapType = material.normalMapType === THREE.TangentSpaceNormalMap ? "TangentSpace" : "ObjectSpace";
-        }
-
-        if (material.envMap) {
-            m.envMap = material.envMap.url;
-            m.envMapIntensity = material.envMapIntensity;
-        }
-
-        if (material.specular !== undefined && material.specular !== null) {
-            m.specularColor = getColor(material.specular);
-            m.shininess = material.shininess;
-        }
-
-        if (material.lightMap) {
-            m.lightMap = material.lightMap.url;
-            m.lightMapIntensity = material.lightMapIntensity;
-        }
-
-        if (material.specularMap) {
-            m.specularMap = material.specularMap.url;
-        }
-
-        if (material.metalness !== undefined && material.metalness !== null) {
-            m.metalness = material.metalness;
-        }
-
-        if (material.metalnessMap) {
-            m.metalnessMap = material.metalnessMap.url;
-        }
-
-        if (material.refractionRatio !== undefined && material.refractionRatio !== null) {
-            m.refractionRatio = material.refractionRatio;
-        }
-
-        if (material.roughness !== undefined && material.roughness !== null) {
-            m.roughness = material.roughness;
-        }
-
-        if (material.roughnessMap) {
-            m.roughnessMap = material.roughnessMap.url;
-        }
-
-        if (material.vertexTangents !== undefined && material.vertexTangents !== null) {
-            m.vertexTangents = material.vertexTangents;
-        }
+    if (material.emissive !== undefined && material.emissive !== null) {
+      m.emissiveColor = getColor(material.emissive);
+      m.emissiveIntensity = material.emissiveIntensity;
     }
 
+    if (material.emissiveMap) {
+      m.emissiveMap = material.emissiveMap.url;
+    }
+
+    if (material.color !== undefined && material.color !== null) {
+      m.diffuseColor = getColor(material.color);
+    }
+
+    if (material.map) {
+      m.diffuseColorMap = material.map.url;
+    }
+
+    if (material.aoMap) {
+      m.diffuseAOMap = material.aoMap.url;
+      m.diffuseAOMapIntensity = material.aoMapIntensity;
+    }
+
+    if (material.bumpMap) {
+      m.bumpMap = material.bumpMap.url;
+      m.bumpMapScale = material.bumpScale;
+    }
+
+    if (material.normalMap) {
+      m.normalMap = material.normalMap.url;
+      m.normalMapScale = "" + material.normalScale.x + "," + material.normalScale.y;
+      m.normalMapType = material.normalMapType === THREE.TangentSpaceNormalMap ? "TangentSpace" : "ObjectSpace";
+    }
+
+    if (material.envMap) {
+      m.envMap = material.envMap.url;
+      m.envMapIntensity = material.envMapIntensity;
+    }
+
+    if (material.specular !== undefined && material.specular !== null) {
+      m.specularColor = getColor(material.specular);
+      m.shininess = material.shininess;
+    }
+
+    if (material.lightMap) {
+      m.lightMap = material.lightMap.url;
+      m.lightMapIntensity = material.lightMapIntensity;
+    }
+
+    if (material.specularMap) {
+      m.specularMap = material.specularMap.url;
+    }
+
+    if (material.metalness !== undefined && material.metalness !== null) {
+      m.metalness = material.metalness;
+    }
+
+    if (material.metalnessMap) {
+      m.metalnessMap = material.metalnessMap.url;
+    }
+
+    if (material.refractionRatio !== undefined && material.refractionRatio !== null) {
+      m.refractionRatio = material.refractionRatio;
+    }
+
+    if (material.roughness !== undefined && material.roughness !== null) {
+      m.roughness = material.roughness;
+    }
+
+    if (material.roughnessMap) {
+      m.roughnessMap = material.roughnessMap.url;
+    }
+
+    if (material.vertexTangents !== undefined && material.vertexTangents !== null) {
+      m.vertexTangents = material.vertexTangents;
+    }
+  }
 
 
-    //  console.log("indices: " + indices.length + " vertices: " + vertices.length);
 
-    return { buf: new Uint8Array(buf, 0, mp), size: mp, info: info };
+  //  console.log("indices: " + indices.length + " vertices: " + vertices.length);
+
+  return { buf: new Uint8Array(buf, 0, mp), size: mp, info: info };
 };
 
 function convertAll(scene) {
-    var cnt = 1;
+  var cnt = 1;
 
-    try {
-        fs.mkdirSync(outpath);
-    } catch (error) {
+  try {
+    fs.mkdirSync(outpath);
+  } catch (error) {
+  }
+
+  scene._meshList.forEach(c => {
+
+    let pad = (String(cnt++).padStart(3, '0'));
+
+    let m = c.material;
+    for (const a in m) {
+      let p = m[a];
+      if (p && typeof p === 'object' && p.url !== undefined) {
+        if (p.url.indexOf('data:') === 0) {
+          let mime = p.url.replace('data:', '');
+          mime = mime.substring(0, mime.indexOf(';'));
+          let d = p.url.substring(p.url.indexOf(',') + 1);
+          p.url = new Blob([new Buffer(d, 'base64')], { type: mime }).id;
+        }
+        if (p.url.indexOf('blob:') === 0) {
+          let b = blobs[p.url.replace('blob:', '') | 0];
+          b.name = pad + "_" + c.name + "_" + m.name + "_" + a + "." + b.type;
+          p.url = b.name;
+        }
+      }
     }
 
-    scene._meshList.forEach(c => {
+    var p3d = _convertObject(scene, c);
+    var fn = path.resolve(outpath, pad + "_" + c.name.replace(/\W/g, '_') + ".p3d");
+    var fnInfo = fn.replace('.p3d', '.txt');
 
-        let pad = (String(cnt++).padStart(3, '0'));
+    var msg = "done: " + c.name;
+    msg = msg + " (" + fn + ")";
+    // msg = msg + " material: " + c.material.id + " " + c.material.uuid;
 
-        let m = c.material;
-        for (const a in m) {
-            let p = m[a];
-            if (p && typeof p === 'object' && p.url !== undefined) {
-                if (p.url.indexOf('data:') === 0) {
-                    let mime = p.url.replace('data:', '');
-                    mime = mime.substring(0, mime.indexOf(';'));
-                    let d = p.url.substring(p.url.indexOf(',') + 1);
-                    p.url = new Blob([new Buffer(d, 'base64')], { type: mime }).id;
-                }
-                if (p.url.indexOf('blob:') === 0) {
-                    let b = blobs[p.url.replace('blob:', '') | 0];
-                    b.name = pad + "_" + c.name + "_" + m.name + "_" + a + "." + b.type;
-                    p.url = b.name;
-                }
-            }
-        }
+    try {
+      fs.writeFileSync(fn, Buffer.alloc(p3d.size, p3d.buf));
+      fs.writeFileSync(fnInfo, JSON.stringify(p3d.info, false, 4));
+    } catch (error) {
+      console.error("Internal Error!");
+    }
+    console.log(msg);
+  });
 
-
-
-        var p3d = _convertObject(scene, c);
-        var fn = path.resolve(outpath, pad + "_" + c.name.replace(/\W/g, '_') + ".p3d");
-        var fnInfo = fn.replace('.p3d', '.txt');
-
-        var msg = "done: " + c.name;
-        msg = msg + " (" + fn + ")";
-        // msg = msg + " material: " + c.material.id + " " + c.material.uuid;
-
-        try {
-            fs.writeFileSync(fn, Buffer.alloc(p3d.size, p3d.buf));
-            fs.writeFileSync(fnInfo, JSON.stringify(p3d.info, false, 4));
-        } catch (error) {
-            console.error("Internal Error!");
-        }
-        console.log(msg);
-    });
-
-    blobs.forEach(b => {
-        if (b.name) {
-            fs.writeFileSync(outpath + "/" + b.name, b.buffer);
-        }
-    });
+  blobs.forEach(b => {
+    if (b.name) {
+      fs.writeFileSync(outpath + "/" + b.name, b.buffer);
+    }
+  });
 }
 
 function inspectScene(scene) {
-    var minposx = Number.MAX_VALUE;
-    var minposy = Number.MAX_VALUE;
-    var minposz = Number.MAX_VALUE;
+  var minposx = Number.MAX_VALUE;
+  var minposy = Number.MAX_VALUE;
+  var minposz = Number.MAX_VALUE;
 
-    var maxposx = -Number.MAX_VALUE;
-    var maxposy = -Number.MAX_VALUE;
-    var maxposz = -Number.MAX_VALUE;
+  var maxposx = -Number.MAX_VALUE;
+  var maxposy = -Number.MAX_VALUE;
+  var maxposz = -Number.MAX_VALUE;
 
-    scene._meshList = [];
-    var materials = {};
+  scene._meshList = [];
+  var materials = {};
 
-    function inspect(obj) {
-        if (obj && obj.geometry) {
-            if (merge) {
-                let uuid = obj.material.uuid;
-                if (materials[uuid] !== undefined) {
-                    materials[uuid].push(obj);
-                    /*
-                    materials[obj.material.uuid].geometry = THREE.BufferGeometryUtils.mergeBufferGeometries([materials[obj.material.uuid].geometry, obj.geometry], false);
-                    materials[obj.material.uuid].name += obj.name;
-                    materials[obj.material.uuid].name = materials[obj.material.uuid].name.substring(0, 32);
-                    */
-                } else {
-                    //scene._meshList.push(obj);
-                    materials[obj.material.uuid] = [obj];
-                }
-            } else {
-                scene._meshList.push(obj);
-            }
-
-            let pos = obj.geometry.getAttribute('position');
-            let vs = pos.array;
-            let vc = pos.count;
-
-            for (let j = 0; j < vc; j++) {
-                let i = j * 3;
-
-                vs[i + 2] = -vs[i + 2];
-
-                minposx = Math.min(vs[i + 0], minposx);
-                minposy = Math.min(vs[i + 1], minposy);
-                minposz = Math.min(vs[i + 2], minposz);
-
-                maxposx = Math.max(vs[i + 0], maxposx);
-                maxposy = Math.max(vs[i + 1], maxposy);
-                maxposz = Math.max(vs[i + 2], maxposz);
-            }
+  function inspect(obj) {
+    if (obj && obj.geometry) {
+      if (merge) {
+        let uuid = obj.material.uuid;
+        console.log(`name: ${obj.name} up: ${obj.up.x}:${obj.up.y}:${obj.up.z} rot: ${obj.rotation.x}:${obj.rotation.y}:${obj.rotation.z} pos:${obj.position.x}:${obj.position.y}:${obj.position.z}`);
+        if (materials[uuid] !== undefined) {
+          materials[uuid].push(obj);
+          /*
+          materials[obj.material.uuid].geometry = THREE.BufferGeometryUtils.mergeBufferGeometries([materials[obj.material.uuid].geometry, obj.geometry], false);
+          materials[obj.material.uuid].name += obj.name;
+          materials[obj.material.uuid].name = materials[obj.material.uuid].name.substring(0, 32);
+          */
+        } else {
+          //scene._meshList.push(obj);
+          materials[obj.material.uuid] = [obj];
         }
-        if (obj.children) {
-            obj.children.forEach(e => inspect(e));
-        }
+      } else {
+        scene._meshList.push(obj);
+      }
+
+      let matrix = new THREE.Matrix4();
+      matrix.compose(obj.position, obj.quaternion, obj.scale);
+
+      let pos = obj.geometry.getAttribute('position');
+      let vs = pos.array;
+      let vc = pos.count;
+
+      obj._vertices = [];
+
+      for (let j = 0; j < vc; j++) {
+        let i = j * 3;
+
+        // vs[i + 2] = -vs[i + 2];
+
+        let v3 = new THREE.Vector3(vs[i + 0], vs[i + 1], vs[i + 2]);
+        v3.applyMatrix4(matrix);
+
+        v3.y = -v3.y;
+
+        obj._vertices.push(v3.x);
+        obj._vertices.push(v3.y);
+        obj._vertices.push(v3.z);
+
+        minposx = Math.min(v3.x, minposx);
+        minposy = Math.min(v3.y, minposy);
+        minposz = Math.min(v3.z, minposz);
+
+        maxposx = Math.max(v3.x, maxposx);
+        maxposy = Math.max(v3.y, maxposy);
+        maxposz = Math.max(v3.z, maxposz);
+      }
     }
-
-
-    inspect(scene);
-
-    if (merge) {
-        for (let a in materials) {
-            let os = materials[a];
-            if (os) {
-                if (os.length > 1) {
-                    let gs = [];
-                    let name = "";
-                    os.forEach(geo => {
-                        gs.push(geo.geometry);
-                        name = name + geo.name;
-                        name = name.substring(0, 32);
-                    });
-                    const mergedGeometry = THREE.BufferGeometryUtils.mergeBufferGeometries(gs, false);
-                    const mesh = new THREE.Mesh(mergedGeometry, os[0].material);
-                    mesh.name = name;
-                    scene._meshList.push(mesh);
-                } else {
-                    scene._meshList.push(os[0]);
-                }
-            }
-        }
+    if (obj.children) {
+      obj.children.forEach(e => inspect(e));
     }
+  }
 
-    scene._minposx = minposx;
-    scene._minposy = minposy;
-    scene._minposz = minposz;
 
-    scene._maxposx = maxposx;
-    scene._maxposy = maxposy;
-    scene._maxposz = maxposz;
+  inspect(scene);
+
+  if (merge) {
+    for (let a in materials) {
+      let os = materials[a];
+      if (os) {
+        if (os.length > 1) {
+          let gs = [];
+          let name = "";
+          os.forEach(geo => {
+            gs.push(geo.geometry);
+            name = name + geo.name;
+            name = name.substring(0, 32);
+          });
+          const mergedGeometry = THREE.BufferGeometryUtils.mergeBufferGeometries(gs, false);
+          if (mergedGeometry) {
+            const mesh = new THREE.Mesh(mergedGeometry, os[0].material);
+            mesh.name = name;
+            scene._meshList.push(mesh);
+          } else {
+            os.forEach(mesh => { if (mesh) { scene._meshList.push(mesh); } });
+          }
+        } else {          
+          if (os[0]) {
+            scene._meshList.push(os[0]);
+          }          
+        }
+      }
+    }
+  }
+
+  scene._minposx = minposx;
+  scene._minposy = minposy;
+  scene._minposz = minposz;
+
+  scene._maxposx = maxposx;
+  scene._maxposy = maxposy;
+  scene._maxposz = maxposz;
+
+  console.log(`${minposx}:${minposy}:${minposz} ${maxposx}:${maxposy}:${maxposz}`);
 }
 
 function execute(scene) {
-    try {
-        inspectScene(scene);
-    } catch (error) {
-        console.error(error);
-    }
-    try {
-        convertAll(scene);
-    } catch (error) {
-        console.error(error);
-    }
+  try {
+    inspectScene(scene);
+  } catch (error) {
+    console.error(error);
+  }
+  try {
+    convertAll(scene);
+  } catch (error) {
+    console.error(error);
+  }
 }
+
+const NodeDRACOLoader = require('./NodeDRACOLoader.js');
+THREE.DRACOLoader.getDecoderModule = () => { };
+
 
 
 
 if (fileObj) {
-    dataObj = fs.readFileSync(fileObj).toString();
+  dataObj = fs.readFileSync(fileObj).toString();
 
-    let assetPath = path.dirname(fileObj) + "/";
-    let manager;
+  let assetPath = path.dirname(fileObj) + "/";
+  let manager;
 
-    if (fs.existsSync(fileMtl)) {
-        dataMtl = fs.readFileSync(fileMtl).toString();
+  if (fs.existsSync(fileMtl)) {
+    dataMtl = fs.readFileSync(fileMtl).toString();
 
-        manager = new THREE.LoadingManager();
-        manager.onLoad = () => { };
+    manager = new THREE.LoadingManager();
+    manager.onLoad = () => { };
 
-        manager.onStart = (url, itemsLoaded, itemsTotal) => {
-         //   console.log('Started loading file: ' + url + '.\nLoaded ' + itemsLoaded + ' of ' + itemsTotal + ' files.');
-        };
+    manager.onStart = (url, itemsLoaded, itemsTotal) => {
+      //   console.log('Started loading file: ' + url + '.\nLoaded ' + itemsLoaded + ' of ' + itemsTotal + ' files.');
+    };
 
-        manager.onProgress = function (url, itemsLoaded, itemsTotal) {
-          //  console.log('Loading file: ' + url + '.\nLoaded ' + itemsLoaded + ' of ' + itemsTotal + ' files.');
-        };
+    manager.onProgress = function (url, itemsLoaded, itemsTotal) {
+      //  console.log('Loading file: ' + url + '.\nLoaded ' + itemsLoaded + ' of ' + itemsTotal + ' files.');
+    };
 
 
-        mtls = new THREE.MTLLoader(manager)
-            .setMaterialOptions({
-                side: THREE.FrontSide,
-                wrap: THREE.ClampToEdgeWrapping,
-                normalizeRGB: false,
-                ignoreZeroRGBs: false,
-                invertTrProperty: false
-            })
-            .parse(dataMtl, assetPath);
+    mtls = new THREE.MTLLoader(manager)
+      .setMaterialOptions({
+        side: THREE.FrontSide,
+        wrap: THREE.ClampToEdgeWrapping,
+        normalizeRGB: false,
+        ignoreZeroRGBs: false,
+        invertTrProperty: false
+      })
+      .parse(dataMtl, assetPath);
+  }
+
+  let loader = new THREE.OBJLoader();
+  let scene;
+
+  try {
+    if (mtls) {
+      loader.setMaterials(mtls);
     }
+    scene = loader.parse(dataObj);
 
-    let loader = new THREE.OBJLoader();
-    let scene;
-
-    try {
-        if (mtls) {
-            loader.setMaterials(mtls);
-        }
-        scene = loader.parse(dataObj);
-
-        if (mtls && mtls.materialsArray.length > 0 && manager) {
-            manager.onLoad = () => {
-                execute(scene);
-            };
-        } else {
-            execute(scene);
-        }
-    } catch (error) {
-        console.error(error);
+    if (mtls && mtls.materialsArray.length > 0 && manager) {
+      manager.onLoad = () => {
+        execute(scene);
+      };
+    } else {
+      execute(scene);
     }
+  } catch (error) {
+    console.error(error);
+  }
 } else if (fileGLTF) {
-    dataObj = fs.readFileSync(fileGLTF).toString();
-    let assetPath = path.dirname(fileGLTF) + "/";
-    let loader = new THREE.GLTFLoader();
-    loader.parse(dataObj, assetPath, (gltf) => {
-        execute(gltf.scene);
-    }, () => { console.log("Error!"); });
+  dataObj = fs.readFileSync(fileGLTF).toString();
+  let assetPath = path.dirname(fileGLTF) + "/";
+  let loader = new THREE.GLTFLoader();
+  loader.setDRACOLoader(new NodeDRACOLoader());
+  loader.parse(dataObj, assetPath, (gltf) => {
+    execute(gltf.scene);
+  }, () => { console.log("Error!"); });
 } else if (fileGLB) {
-    dataObj = bufferToArrayBufferCycle(fs.readFileSync(fileGLB));
-    let assetPath = path.dirname(fileGLB) + "/";
-    let loader = new THREE.GLTFLoader();
-    loader.parse(dataObj, assetPath, (gltf) => {
-        execute(gltf.scene);
-    }, (x) => {
-        console.log("Error!" + x.message);
-    });
+  dataObj = bufferToArrayBufferCycle(fs.readFileSync(fileGLB));
+  let assetPath = path.dirname(fileGLB) + "/";
+  let loader = new THREE.GLTFLoader();
+  loader.setDRACOLoader(new NodeDRACOLoader());
+  loader.parse(dataObj, assetPath, (gltf) => {
+    execute(gltf.scene);
+  }, (x) => {
+    console.log("Error!" + x.message);
+  });
 
 }
 
