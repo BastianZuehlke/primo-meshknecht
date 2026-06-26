@@ -4,8 +4,8 @@
 const fs = require('fs');
 const program = require('commander');
 const path = require('path');
-const worker = require('worker_threads');
-Worker = worker.Worker;
+//const worker = require('worker_threads');
+//Worker = worker.Worker;
 
 THREE = require('three');
 require('three/examples/js/loaders/OBJLoader');
@@ -26,7 +26,7 @@ program
 
 program.parse(process.argv);
 
-//console.log("Node: " + process.version);
+console.log("Node: " + process.version);
 
 let fileObj = null;
 let fileGLTF = null;
@@ -212,7 +212,14 @@ var _convertObject = (scene, obj) => {
   if (obj.geometry.attributes.normal) {
     ns = obj.geometry.getAttribute('normal').array;
     flags = flags | flagEnums.normals;
+  } else {
+    obj.geometry.computeVertexNormals();
+    if (obj.geometry.attributes.normal) {
+      ns = obj.geometry.getAttribute('normal').array;
+      flags = flags | flagEnums.normals;
+    }  
   }
+
 
   var minposx = scene._minposx;
   var minposy = scene._minposy;
@@ -249,7 +256,7 @@ var _convertObject = (scene, obj) => {
 
     if (uvs) {
       i = j * 2;
-      uvs[i + 1] = - uvs[i + 1] + 1;
+    //  uvs[i + 1] = - uvs[i + 1] + 1;
       minu0 = Math.min(uvs[i + 0], minu0);
       minv0 = Math.min(uvs[i + 1], minv0);
       maxu0 = Math.max(uvs[i + 0], maxu0);
@@ -269,6 +276,9 @@ var _convertObject = (scene, obj) => {
       vs[i + 1] *= zoom;
       vs[i + 2] *= zoom;
     }
+
+    vs[i + 2] *= -1;
+    vs[i + 1] *= -1;
 
     minposx = Math.min(vs[i + 0], minposx);
     minposy = Math.min(vs[i + 1], minposy);
@@ -315,7 +325,7 @@ var _convertObject = (scene, obj) => {
 
     var iv = j * 3;
     var it = j * 2;
-
+    
     var x = (vs[iv + 0] - minposx) / deltax;
     var y = (vs[iv + 1] - minposy) / deltay;
     var z = (vs[iv + 2] - minposz) / deltaz;
@@ -332,7 +342,22 @@ var _convertObject = (scene, obj) => {
     v.vu = (z << 16) | y;
 
     if (ns) {
+      //ns[iv + 0] = -ns[iv + 0];
+      //ns[iv + 1] = -ns[iv + 1];
       ns[iv + 2] = -ns[iv + 2];
+
+      if (Math.abs(ns[iv + 0]) > 1) {
+        console.log("Ups!");
+      }
+
+      if (Math.abs(ns[iv + 1]) > 1) {
+        console.log("Ups!");
+      }
+
+      if (Math.abs(ns[iv + 2]) > 1) {
+        console.log("Ups!");
+      }
+
       var nx = ((ns[iv + 0] + 1) * 511.999) | 0;
       var ny = ((ns[iv + 1] + 1) * 511.999) | 0;
       var nz = ((ns[iv + 2] + 1) * 511.999) | 0;
@@ -359,9 +384,12 @@ var _convertObject = (scene, obj) => {
 
   if (fs) {
     for (j = 0; j < fc; j += 3) {
-      indices.push(indicesMap[fs[j + 2]]);
       indices.push(indicesMap[fs[j + 1]]);
-      indices.push(indicesMap[fs[j + 0]]);
+      indices.push(indicesMap[fs[j + 0]]);      
+      
+      
+      indices.push(indicesMap[fs[j + 2]]);
+
       //debugIndices =  debugIndices + "" + fs[j+0] + "," + fs[j+1] + "," + fs[j+2] + "|";
     }
   } else {
@@ -633,7 +661,7 @@ function inspectScene(scene) {
   scene._meshList = [];
   var materials = {};
 
-  function inspect(obj) {
+  function inspect(obj, merge) {
     if (obj && obj.geometry) {
       if (merge) {
         let uuid = obj.material.uuid;
@@ -686,12 +714,12 @@ function inspectScene(scene) {
       }
     }
     if (obj.children) {
-      obj.children.forEach(e => inspect(e));
+      obj.children.forEach(e => inspect(e, merge));
     }
   }
 
 
-  inspect(scene);
+  inspect(scene, merge);
 
   if (merge) {
     for (let a in materials) {
@@ -709,7 +737,8 @@ function inspectScene(scene) {
           if (mergedGeometry) {
             const mesh = new THREE.Mesh(mergedGeometry, os[0].material);
             mesh.name = name;
-            scene._meshList.push(mesh);
+            inspect(mesh, false);
+            //scene._meshList.push(mesh);
           } else {
             os.forEach(mesh => { if (mesh) { scene._meshList.push(mesh); } });
           }
